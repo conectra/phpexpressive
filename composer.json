@@ -1,8 +1,8 @@
 {
-  "name": "solis/expressive",
+  "name": "conectra/expressive",
   "require": {
-    "solis/phpbreaker": "0.0.1",
-    "solis/phpmagic": "3.1.0",
+    "conectra/phpbreaker": "0.0.1",
+    "conectra/phpmagic": "3.1.0",
     "illuminate/database": "^5.4",
     "illuminate/events": "^5.2"
   },
