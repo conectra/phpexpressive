@@ -222,13 +222,15 @@ class Wrapper implements DatabaseContainerContract
     /**
      * @param ExpressiveContract $model
      *
+     * @param boolean $dependencies
+     *
      * @return array|mixed
      *
      * @throws TException
      */
-    public function search(ExpressiveContract $model)
+    public function search(ExpressiveContract $model, $dependencies = true)
     {
-        return $this->getSelectBuilder()->search($model);
+        return $this->getSelectBuilder()->search($model, $dependencies);
     }
 
     /**

@@ -46,9 +46,11 @@ interface ExpressiveContract
     );
 
     /**
-     * @return array|mixed
+     * @param bool $dependencies
+     *
+     * @return mixed
      */
-    public function search();
+    public function search($dependencies = true);
 
     /**
      * @return boolean

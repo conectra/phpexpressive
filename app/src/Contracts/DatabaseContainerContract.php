@@ -31,11 +31,13 @@ interface DatabaseContainerContract
     /**
      * @param ExpressiveContract $model
      *
+     * @param boolean $dependencies
+     *
      * @return array|mixed
      *
      * @throws TException
      */
-    public function search(ExpressiveContract $model);
+    public function search(ExpressiveContract $model, $dependencies = true);
 
     /**
      * @param ExpressiveContract $model
