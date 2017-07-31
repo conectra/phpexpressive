@@ -65,6 +65,12 @@ final class SelectBuilder
 
         $table = $model->getSchema()->getDatabase()->getTable();
 
+        // não retorna as dependencias atribuidas ao respectivo model
+        $dependencies = false;
+
+        // retorna todas as colunas atribuidas ao respectivo model
+        $columns = ['*'];
+
         $stmt = Capsule::table($table);
         if (!empty($arguments)) {
             foreach ($arguments as $argument) {
@@ -128,10 +134,30 @@ final class SelectBuilder
                     );
                 }
             }
+
+            if (array_key_exists(
+                'withDependencies',
+                $options
+            )) {
+                if (is_bool($options['withDependencies'])) {
+                    $dependencies = boolval($options['withDependencies']);
+                } else {
+                    $dependencies = !is_array($options['withDependencies']) ? [$options['withDependencies']] : $options['withDependencies'];
+                }
+            }
+
+            if (array_key_exists(
+                'withProperties',
+                $options
+            )) {
+                $withProperties = !is_array($options['withProperties']) ? [$options['withProperties']] : $options['withProperties'];
+
+                $columns = $this->columns($model, $withProperties);
+            }
         }
 
         try {
-            $result = $stmt->get()->toArray();
+            $result = $stmt->get($columns)->toArray();
         } catch (\PDOException $exception) {
             throw new TException(
                 __CLASS__,
@@ -145,21 +171,12 @@ final class SelectBuilder
             return false;
         }
 
-        $withDependencies = false;
-        if (array_key_exists(
-            'withDependencies',
-            $options
-        )) {
-            $withDependencies = $options['withDependencies'];
-        }
-
         $class = get_class($model);
-        $instances = array_map(function ($item) use ($class, $withDependencies) {
+        $instances = array_map(function ($item) use ($class, $dependencies) {
             $instance = Wrapper::fetchStdClassToExpressiveNewModel($item, $class);
-            if(!empty($instance)){
-                if (!empty($withDependencies)) {
-                    $instance = $this->searchForDependencies($instance);
-                }
+            if (!empty($instance)) {
+                $instance = $this->searchForDependencies($instance, $dependencies);
+
                 return $instance;
             }
         }, $result);
@@ -237,7 +254,7 @@ final class SelectBuilder
         );
 
         if (!empty($dependencies)) {
-            $instance = $this->searchForDependencies($instance);
+            $instance = $this->searchForDependencies($instance, true);
         }
 
         return $instance;
@@ -353,18 +370,32 @@ final class SelectBuilder
 
     /**
      * @param ExpressiveContract $model
+     * @param array|boolean      $dependenciItems
      *
      * @return ExpressiveContract
      *
      * @throws TException
      */
-    public function searchForDependencies($model)
+    public function searchForDependencies($model, $dependenciItems)
     {
+        $selectForAll = is_array($dependenciItems) ? false : boolval($dependenciItems);
+
         $dependencies = array_values(array_filter(
-            $model->getSchema()->getDatabase()->getFields(), function (FieldEntryAbstract $field) {
-            return !empty($field->getObject()) ? true : false;
-        }
-        ));
+            $model->getSchema()->getDatabase()->getFields(), function (FieldEntryAbstract $field) use ($dependenciItems, $selectForAll) {
+
+            $selectFor = false;
+            if (!empty($field->getObject())) {
+                if (!empty($selectForAll)) {
+                    return true;
+                }
+
+                if (is_array($dependenciItems)) {
+                    $selectFor = boolval(in_array($field->getProperty(), $dependenciItems));
+                }
+            }
+
+            return $selectFor;
+        }));
 
         if (!empty($dependencies)) {
             foreach ($dependencies as $dependency) {
@@ -397,5 +428,44 @@ final class SelectBuilder
         }
 
         return $model;
+    }
+
+    /**
+     * @param ExpressiveContract $model
+     * @param array              $withProperties
+     *
+     * @return array
+     *
+     * @throws TException
+     */
+    private function columns(
+        $model,
+        $withProperties
+    ) {
+        $searchFor = [];
+
+        foreach ($withProperties as $property) {
+            $meta = $model->getSchema()->getPropertyEntry('property', $property);
+
+            if (empty($meta)) {
+                new TException(
+                    __CLASS__,
+                    __METHOD__,
+                    "property {$property} not found in schema",
+                    400
+                );
+            }
+
+            if (!empty($meta->getObject())) {
+                // relacionamento hasMany não é incluido nas colunas a serem consultadas
+                if ($meta->getObject()->getRelationship()->getType() == 'hasMany') {
+                    continue;
+                }
+            }
+
+            $searchFor[] = $property;
+        }
+
+        return empty($searchFor) ? ['*'] : $searchFor;
     }
 }
