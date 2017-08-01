@@ -85,6 +85,11 @@ interface ExpressiveContract
     public function patch();
 
     /**
+     * @return ExpressiveContract|boolean
+     */
+    public function replicate();
+
+    /**
      * @return string
      */
     public function getUniqid();

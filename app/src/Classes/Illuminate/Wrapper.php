@@ -2,6 +2,7 @@
 
 namespace Solis\Expressive\Classes\Illuminate;
 
+use Solis\Expressive\Classes\Illuminate\Replicate\ReplicateBuilder;
 use Solis\Expressive\Classes\Illuminate\Select\SelectBuilder;
 use Solis\Expressive\Classes\Illuminate\Insert\InsertBuilder;
 use Solis\Expressive\Classes\Illuminate\Delete\DeleteBuilder;
@@ -51,10 +52,16 @@ class Wrapper implements DatabaseContainerContract
     protected $patchBuilder;
 
     /**
+     * @var ReplicateBuilder
+     */
+    protected $replicateBuilder;
+
+    /**
      * __construct
      */
     public function __construct()
     {
+        $this->setReplicateBuilder(new ReplicateBuilder());
         $this->setSelectBuilder(new SelectBuilder());
         $this->setInsertBuilder(new InsertBuilder());
         $this->setDeleteBuilder(new DeleteBuilder());
@@ -199,6 +206,22 @@ class Wrapper implements DatabaseContainerContract
     }
 
     /**
+     * @return ReplicateBuilder
+     */
+    public function getReplicateBuilder()
+    {
+        return $this->replicateBuilder;
+    }
+
+    /**
+     * @param ReplicateBuilder $replicateBuilder
+     */
+    public function setReplicateBuilder($replicateBuilder)
+    {
+        $this->replicateBuilder = $replicateBuilder;
+    }
+
+    /**
      * @param array              $arguments
      * @param array              $options
      * @param ExpressiveContract $model
@@ -303,6 +326,16 @@ class Wrapper implements DatabaseContainerContract
     public function patch(ExpressiveContract $model)
     {
         return $this->getPatchBuilder()->patch($model);
+    }
+
+    /**
+     * @param ExpressiveContract $model
+     *
+     * @return ExpressiveContract|boolean
+     */
+    public function replicate(ExpressiveContract $model)
+    {
+        return $this->getReplicateBuilder()->replicate($model);
     }
 
     /**

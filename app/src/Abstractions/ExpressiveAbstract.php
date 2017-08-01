@@ -244,4 +244,12 @@ abstract class ExpressiveAbstract implements ExpressiveContract
     {
         return $this->getDatabaseContainer()->patch($this);
     }
+
+    /**
+     * @return ExpressiveContract|boolean
+     */
+    public function replicate()
+    {
+        return $this->getDatabaseContainer()->replicate($this);
+    }
 }

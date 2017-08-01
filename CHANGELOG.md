@@ -2,6 +2,27 @@
 
 Todas as modificações relevantes ao  `expressive` serão documentadas nesse arquivo seguindo o especificado em [KEEP CHANGELOG](http://keepachangelog.com/).
 
+## 0.5.0 - 2017-08-01
+
+## Added 
+- Adicionado funcionalidade de replicação de registro active record. 
+
+  Para o correto funcionamento da nova funcionalidade, é necessário especificar o comportamento incremental da propriedade
+  
+  ```
+  "behavior": {
+    "autoIncrement": "true",
+    "incrementalBehavior": "database"    
+   }
+  ```
+  
+  Valores válidos para incrementalBehavior são "database" e "application", atribuindo a responsabilidade do 
+  incremento do registro, respectivamente, para o banco de dados ou para o próprio Expressive.
+  
+## Changed
+- Atualizado versão do pacote phpschema para 0.3.1, de modo a adicionar compatiblidade a entrada incrementalBehavior nas especificações
+  de propriedades do active record.
+
 ## 0.4.0 - 2017-07-31
 
 ## Changed

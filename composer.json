@@ -2,7 +2,7 @@
   "name": "conectra/expressive",
   "require": {
     "conectra/phpbreaker": "0.0.1",
-    "conectra/phpmagic": "3.2.0",
+    "conectra/phpmagic": "~3.2",
     "illuminate/database": "^5.4",
     "illuminate/events": "^5.2"
   },

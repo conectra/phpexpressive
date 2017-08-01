@@ -1,33 +1,57 @@
 <?php
 
-namespace Solis\Expressive\Classes\Illuminate\Insert;
+namespace Solis\Expressive\Classes\Illuminate\Replicate;
 
+use Solis\Expressive\Classes\Illuminate\Insert\InsertBuilder;
 use Solis\Expressive\Classes\Illuminate\Util\Actions;
-use Solis\Expressive\Abstractions\ExpressiveAbstract;
-use Solis\PhpSchema\Abstractions\Database\FieldEntryAbstract;
 use Solis\Expressive\Contracts\ExpressiveContract;
 use Illuminate\Database\Capsule\Manager as Capsule;
 use Solis\Expressive\Classes\Illuminate\Database;
+use Solis\Expressive\Abstractions\ExpressiveAbstract;
+use Solis\PhpSchema\Abstractions\Database\FieldEntryAbstract;
 use Solis\Breaker\TException;
 
 /**
- * Class InsertBuilder
+ * Class PatchBuilder
  *
  * @package Solis\Expressive\Classes\Illuminate\Insert
  */
-final class InsertBuilder
+final class ReplicateBuilder
 {
+
+    /**
+     * @var InsertBuilder
+     */
+    private $insertBuilder;
+
     /**
      * @var RelationshipBuilder
      */
-    protected $relationshipBuilder;
+    private $relationshipBuilder;
 
     /**
-     * __construct
+     * PatchBuilder constructor.
      */
     public function __construct()
     {
+        $this->setInsertBuilder(new InsertBuilder());
         $this->setRelationshipBuilder(new RelationshipBuilder());
+    }
+
+    /**
+     * @return InsertBuilder
+     */
+    public function getInsertBuilder()
+    {
+        return $this->insertBuilder;
+    }
+
+    /**
+     * @param InsertBuilder $insertBuilder
+     */
+    public function setInsertBuilder($insertBuilder)
+    {
+        $this->insertBuilder = $insertBuilder;
     }
 
     /**
@@ -53,7 +77,7 @@ final class InsertBuilder
      *
      * @throws TException;
      */
-    public function create(ExpressiveContract $model)
+    public function replicate(ExpressiveContract $model)
     {
         if (empty($model->getSchema()->getDatabase())) {
             throw new TException(
@@ -64,11 +88,59 @@ final class InsertBuilder
             );
         }
 
-        $record = $this->beforeInsertVerifyDuplicity($model);
-        if (!empty($record) && $record instanceof ExpressiveAbstract) {
-            return $record;
+        $original = $model->search();
+        if (empty($original)) {
+            throw new TException(
+                __CLASS__,
+                __METHOD__,
+                'object for ' . get_class($model) . ' has not been found in the database',
+                400
+            );
         }
 
+        $databaseIncrementableKeys = [];
+        $applicationIncrementableKeys = [];
+        foreach ($original->getSchema()->getDatabase()->getPrimaryKeys() as $primaryKey) {
+            $meta = $original->getSchema()->getPropertyEntry('property', $primaryKey);
+
+            if (!empty($meta->getBehavior()->isAutoIncrement())) {
+                switch ($meta->getBehavior()->getIncrementalBehavior()) {
+                    case 'database':
+                        $databaseIncrementableKeys[] = $meta->getProperty();
+                        break;
+                    case 'application':
+                        $applicationIncrementableKeys[] = $meta->getProperty();
+                        break;
+                }
+            }
+        }
+
+        if (empty($databaseIncrementableKeys) && empty($applicationIncrementableKeys)) {
+            throw new TException(
+                __CLASS__,
+                __METHOD__,
+                'you must have a least one incremental key to use replicate method',
+                500
+            );
+        }
+
+        return $this->create($original, $applicationIncrementableKeys, $databaseIncrementableKeys);
+    }
+
+    /**
+     * @param ExpressiveContract $model
+     * @param array              $applicationIncrementableKeys
+     * @param array              $databaseIncrementableKeys
+     *
+     * @return ExpressiveContract|boolean
+     *
+     * @throws TException;
+     */
+    private function create(
+        ExpressiveContract $model,
+        $applicationIncrementableKeys = [],
+        $databaseIncrementableKeys = []
+    ) {
         $table = $model->getSchema()->getDatabase()->getTable();
 
         Database::beginTransaction($model);
@@ -83,7 +155,13 @@ final class InsertBuilder
             // verify direct dependencies to $model
             $model = $this->hasOneDependency($model);
 
-            Capsule::table($table)->insert($this->getInsertFields($model));
+            Capsule::table($table)->insert(
+                $this->getInsertFields(
+                    $model,
+                    $applicationIncrementableKeys,
+                    $databaseIncrementableKeys
+                )
+            );
         } catch (\PDOException $exception) {
 
             Database::rollbackActiveTransaction($model);
@@ -95,7 +173,7 @@ final class InsertBuilder
             );
         }
 
-        $model = $this->setPrimaryKeysFromLast($model);
+        $model = $this->getInsertBuilder()->setPrimaryKeysFromLast($model);
 
         // verify dependencies related to model
         $this->hasManyDependencies($model);
@@ -110,45 +188,6 @@ final class InsertBuilder
 
         // return the last inserted entry
         return $model;
-    }
-
-    /**
-     * @param ExpressiveContract $model
-     *
-     * @return ExpressiveContract
-     */
-    public function setPrimaryKeysFromLast($model)
-    {
-        $last = $model->last();
-        foreach ($model->getSchema()->getDatabase()->getPrimaryKeys() as $primaryKey) {
-            $model->$primaryKey = $last->$primaryKey;
-        }
-
-        $autoIncremented = array_filter($model->getSchema()->getProperties(), function ($property){
-            return !empty($property->getBehavior()->isAutoIncrement()) ? true : false;
-        });
-
-        foreach ($autoIncremented as $field) {
-            $model->{$field->getProperty()} = $last->{$field->getProperty()};
-        }
-
-        return $model;
-    }
-
-    /**
-     * @param ExpressiveContract $model
-     *
-     * @return bool|ExpressiveContract
-     */
-    private function beforeInsertVerifyDuplicity($model)
-    {
-        foreach ($model->getSchema()->getDatabase()->getPrimaryKeys() as $primaryKey) {
-            if (is_null($model->$primaryKey)) {
-                return false;
-            }
-        }
-
-        return $model->search();
     }
 
     /**
@@ -211,15 +250,24 @@ final class InsertBuilder
 
     /**
      * @param ExpressiveContract $model
+     * @param array              $applicationIncrementableKeys
+     * @param array              $databaseIncrementableKeys
      *
      * @return array
      *
      * @throws TException
      */
-    public function getInsertFields($model)
-    {
+    private function getInsertFields(
+        ExpressiveContract $model,
+        $applicationIncrementableKeys = [],
+        $databaseIncrementableKeys = []
+    ) {
         $persistentFields = array_filter($model->getSchema()->getDatabase()->getFields(), function (FieldEntryAbstract $item) use ($model){
-            if (!empty($item->getBehavior()->isAutoIncrement()) && is_null($item->getProperty())) {
+            if (
+                !empty($item->getBehavior()->isAutoIncrement()) &&
+                $item->getBehavior()->getIncrementalBehavior() === 'database' &&
+                is_null($item->getProperty())
+            ) {
                 return false;
             }
             if(!empty($item->getObject())){
@@ -250,9 +298,18 @@ final class InsertBuilder
             );
         }
 
+        if (!empty($applicationIncrementableKeys)) {
+            $last = $model->last();
+            foreach ($applicationIncrementableKeys as $key) {
+                $model->{$key} = $last->{$key} + 1;
+            }
+        }
+
         $fields = [];
         foreach ($persistentFields as $persistentField) {
-            $fields[$persistentField->getColumn()] = $model->{$persistentField->getProperty()};
+            if (!in_array($persistentField->getProperty(), $databaseIncrementableKeys)) {
+                $fields[$persistentField->getColumn()] = $model->{$persistentField->getProperty()};
+            }
         }
 
         return $fields;

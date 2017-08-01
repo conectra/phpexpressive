@@ -94,6 +94,13 @@ interface DatabaseContainerContract
     public function patch(ExpressiveContract $model);
 
     /**
+     * @param ExpressiveContract $model
+     *
+     * @return ExpressiveContract|boolean
+     */
+    public function replicate(ExpressiveContract $model);
+
+    /**
      * @return SchemaContract
      *
      * @throws TException
