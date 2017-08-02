@@ -2,6 +2,11 @@
 
 Todas as modificações relevantes ao  `expressive` serão documentadas nesse arquivo seguindo o especificado em [KEEP CHANGELOG](http://keepachangelog.com/).
 
+## 0.5.1 - 2017-08-02
+
+## Fixed
+- Revisado rotina patch de atualização de registro de modo a corrigir erro de atualização quando relacionamento 1 para 1.
+
 ## 0.5.0 - 2017-08-01
 
 ## Added 
