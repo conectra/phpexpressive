@@ -25,17 +25,11 @@ final class ReplicateBuilder
     private $insertBuilder;
 
     /**
-     * @var RelationshipBuilder
-     */
-    private $relationshipBuilder;
-
-    /**
      * PatchBuilder constructor.
      */
     public function __construct()
     {
         $this->setInsertBuilder(new InsertBuilder());
-        $this->setRelationshipBuilder(new RelationshipBuilder());
     }
 
     /**
@@ -52,22 +46,6 @@ final class ReplicateBuilder
     public function setInsertBuilder($insertBuilder)
     {
         $this->insertBuilder = $insertBuilder;
-    }
-
-    /**
-     * @return RelationshipBuilder
-     */
-    public function getRelationshipBuilder()
-    {
-        return $this->relationshipBuilder;
-    }
-
-    /**
-     * @param RelationshipBuilder $relationshipBuilder
-     */
-    public function setRelationshipBuilder($relationshipBuilder)
-    {
-        $this->relationshipBuilder = $relationshipBuilder;
     }
 
     /**
@@ -98,19 +76,32 @@ final class ReplicateBuilder
             );
         }
 
+        return $this->create($original);
+    }
+
+    /**
+     * @param ExpressiveContract $model
+     *
+     * @return ExpressiveContract|boolean
+     *
+     * @throws TException;
+     */
+    private function create(
+        ExpressiveContract $model
+    ) {
         $databaseIncrementableKeys = [];
         $applicationIncrementableKeys = [];
-        foreach ($original->getSchema()->getDatabase()->getPrimaryKeys() as $primaryKey) {
-            $meta = $original->getSchema()->getPropertyEntry('property', $primaryKey);
 
-            if (!empty($meta->getBehavior()->isAutoIncrement())) {
-                switch ($meta->getBehavior()->getIncrementalBehavior()) {
-                    case 'database':
-                        $databaseIncrementableKeys[] = $meta->getProperty();
-                        break;
-                    case 'application':
-                        $applicationIncrementableKeys[] = $meta->getProperty();
-                        break;
+        foreach ($model->getSchema()->getProperties() as $property) {
+            if ($property->getBehavior()->getIncrementalBehavior() == 'database') {
+                if (!in_array($property->getProperty(), $databaseIncrementableKeys)) {
+                    $databaseIncrementableKeys[] = $property->getProperty();
+                }
+            }
+
+            if ($property->getBehavior()->getIncrementalBehavior() == 'application') {
+                if (!in_array($property->getProperty(), $databaseIncrementableKeys)) {
+                    $applicationIncrementableKeys[] = $property->getProperty();
                 }
             }
         }
@@ -124,23 +115,6 @@ final class ReplicateBuilder
             );
         }
 
-        return $this->create($original, $applicationIncrementableKeys, $databaseIncrementableKeys);
-    }
-
-    /**
-     * @param ExpressiveContract $model
-     * @param array              $applicationIncrementableKeys
-     * @param array              $databaseIncrementableKeys
-     *
-     * @return ExpressiveContract|boolean
-     *
-     * @throws TException;
-     */
-    private function create(
-        ExpressiveContract $model,
-        $applicationIncrementableKeys = [],
-        $databaseIncrementableKeys = []
-    ) {
         $table = $model->getSchema()->getDatabase()->getTable();
 
         Database::beginTransaction($model);
@@ -217,7 +191,7 @@ final class ReplicateBuilder
                     );
                 }
 
-                $model = $this->getRelationshipBuilder()->hasOne(
+                $model = $this->hasOne(
                     $model,
                     $dependency
                 );
@@ -239,7 +213,7 @@ final class ReplicateBuilder
             foreach (array_values($dependencies) as $dependency) {
                 $value = $model->{$dependency->getProperty()};
                 if (!empty($value)) {
-                    $this->getRelationshipBuilder()->hasMany(
+                    $this->hasMany(
                         $model,
                         $dependency
                     );
@@ -313,5 +287,88 @@ final class ReplicateBuilder
         }
 
         return $fields;
+    }
+
+    /**
+     * @param ExpressiveContract $model
+     * @param FieldEntryAbstract $dependency
+     *
+     * @return ExpressiveContract
+     *
+     * @throws TException
+     */
+    public function hasOne(
+        $model,
+        $dependency
+    ) {
+        $value = $model->{$dependency->getProperty()};
+        $instance = is_array($dependency) ? call_user_func_array(
+            [$dependency->getObject()->getClass(), 'make'],
+            [$model->{$dependency->getProperty()}]
+        ) : $value;
+
+        $sharedFields = $dependency->getObject()->getRelationship()->getSharedFields();
+        if (!empty($sharedFields)) {
+            foreach ($sharedFields as $sharedField) {
+                $instance->{$sharedField} = $model->{$sharedField};
+            }
+        }
+        if (empty($instance->search())) {
+            throw new TException(
+                __CLASS__,
+                __METHOD__,
+                "dependency " . get_class($instance) . " has not been found in database for class " . get_class($model),
+                500
+            );
+        }
+
+        $refers = $dependency->getObject()->getRelationship()->getSource()->getRefers();
+
+        $field = $dependency->getObject()->getRelationship()->getSource()->getField();
+
+        $model->{$field} = $instance->{$refers};
+
+        return $model;
+    }
+
+    /**
+     * @param ExpressiveContract|ExpressiveContract[] $model
+     * @param FieldEntryAbstract                      $dependency
+     *
+     * @return ExpressiveContract
+     *
+     * @throws TException
+     */
+    public function hasMany(
+        $model,
+        $dependency
+    ) {
+
+        $dependencyValue = $model->{$dependency->getProperty()};
+
+        $dependencyValue = !is_array($dependencyValue) ? [$dependencyValue] : $dependencyValue;
+
+        $field = $dependency->getObject()->getRelationship()->getSource()->getField();
+
+        $refers = $dependency->getObject()->getRelationship()->getSource()->getRefers();
+
+        $sharedFields = $dependency->getObject()->getRelationship()->getSharedFields();
+        foreach ($dependencyValue as $item) {
+            $item->$refers = $model->$field;
+
+            if (!empty($sharedFields)) {
+                foreach ($sharedFields as $sharedField) {
+                    $item->{$sharedField} = $model->{$sharedField};
+                }
+            }
+            if (!$this->create($item)) {
+                throw new TException(
+                    __CLASS__,
+                    __METHOD__,
+                    "error creating dependency " . get_class($item) . " for " . get_class($model),
+                    500
+                );
+            }
+        }
     }
 }
