@@ -275,7 +275,7 @@ final class ReplicateBuilder
         if (!empty($applicationIncrementableKeys)) {
             $last = $model->last();
             foreach ($applicationIncrementableKeys as $key) {
-                $model->{$key} = $last->{$key} + 1;
+                $model->{$key} = !empty($last) ? $last->{$key} + 1 : 1;
             }
         }
 
