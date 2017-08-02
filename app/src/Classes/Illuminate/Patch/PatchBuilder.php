@@ -2,10 +2,8 @@
 
 namespace Solis\Expressive\Classes\Illuminate\Patch;
 
-use Solis\Expressive\Classes\Illuminate\Insert\InsertBuilder;
-use Solis\Expressive\Classes\Illuminate\Util\Actions;
+use Solis\Expressive\Classes\Illuminate\Update\UpdateBuilder;
 use Solis\Expressive\Contracts\ExpressiveContract;
-use Illuminate\Database\Capsule\Manager as Capsule;
 use Solis\Expressive\Classes\Illuminate\Database;
 use Solis\Breaker\TException;
 
@@ -18,32 +16,54 @@ final class PatchBuilder
 {
 
     /**
-     * @var InsertBuilder
+     * @var UpdateBuilder
      */
-    private $insertBuilder;
+    private $updateBuilder;
+
+    /**
+     * @var RelationshipBuilder
+     */
+    private $relationshipBuilder;
 
     /**
      * PatchBuilder constructor.
      */
     public function __construct()
     {
-        $this->setInsertBuilder(new InsertBuilder());
+        $this->setUpdateBuilder(new UpdateBuilder());
+        $this->setRelationshipBuilder(new RelationshipBuilder());
     }
 
     /**
-     * @return InsertBuilder
+     * @return UpdateBuilder
      */
-    public function getInsertBuilder()
+    public function getUpdateBuilder()
     {
-        return $this->insertBuilder;
+        return $this->updateBuilder;
     }
 
     /**
-     * @param InsertBuilder $insertBuilder
+     * @param UpdateBuilder $updateBuilder
      */
-    public function setInsertBuilder($insertBuilder)
+    public function setUpdateBuilder($updateBuilder)
     {
-        $this->insertBuilder = $insertBuilder;
+        $this->updateBuilder = $updateBuilder;
+    }
+
+    /**
+     * @return RelationshipBuilder
+     */
+    public function getRelationshipBuilder()
+    {
+        return $this->relationshipBuilder;
+    }
+
+    /**
+     * @param RelationshipBuilder $relationshipBuilder
+     */
+    public function setRelationshipBuilder($relationshipBuilder)
+    {
+        $this->relationshipBuilder = $relationshipBuilder;
     }
 
     /**
@@ -64,70 +84,35 @@ final class PatchBuilder
             );
         }
 
-        $original = $model->search();
-        if (empty($original)) {
-            throw new TException(
-                __CLASS__,
-                __METHOD__,
-                'object for ' . get_class($model) . ' has not been found in the database',
-                400
-            );
-        }
-
-        Database::beginTransaction($model);
+        // id utilizado para controle de transações
+        $iTid = $model->getUniqid();
 
         try {
 
-            if (empty($original->delete())) {
-                throw new \PDOException('error removing original object');
+            Database::beginTransaction($model);
+
+            $model->setUniqid(uniqid(rand()));
+
+            $original = $model->search();
+            if (empty($original)) {
+                throw new TException(
+                    __CLASS__,
+                    __METHOD__,
+                    'object for ' . get_class($model) . ' has not been found in the database',
+                    400
+                );
             }
 
-            $model = $this->setPrimaryKeysFromOriginal($original, $model);
+            $record = $this->getUpdateBuilder()->update($model, false, false);
+            if (empty($record)) {
+                return $record;
+            }
 
-            $record = $this->create($model);
-
-        } catch (\PDOException $exception) {
-
-            Database::rollbackActiveTransaction($model);
-            throw new TException(
-                __CLASS__,
-                __METHOD__,
-                $exception->getMessage(),
-                400
-            );
-        }
-
-        Database::commitActiveTransaction($model);
-
-        return $record;
-    }
-
-    /**
-     * @param ExpressiveContract $model
-     *
-     * @return ExpressiveContract|boolean
-     *
-     * @throws TException;
-     */
-    private function create(ExpressiveContract $model)
-    {
-        $table = $model->getSchema()->getDatabase()->getTable();
-
-        Database::beginTransaction($model);
-        try {
-
-            $model = Actions::doThingWhenDatabaseAction(
+            $this->hasManyDependencies(
                 $model,
-                'whenInsert',
-                'Before'
+                $original
             );
-
-            // verify direct dependencies to $model
-            $model = $this->getInsertBuilder()->hasOneDependency($model);
-
-            Capsule::table($table)->insert($this->getInsertBuilder()->getInsertFields($model));
         } catch (\PDOException $exception) {
-
             Database::rollbackActiveTransaction($model);
             throw new TException(
                 __CLASS__,
@@ -137,41 +122,39 @@ final class PatchBuilder
             );
         }
 
-        // verify dependencies related to model
-        $this->getInsertBuilder()->hasManyDependencies($model);
-
-        Actions::doThingWhenDatabaseAction(
-            $model,
-            'whenInsert',
-            'after'
-        );
+        $model->setUniqid($iTid);
 
         Database::commitActiveTransaction($model);
 
-        // return the last inserted entry
-        return $model;
+        return $model->search();
     }
 
     /**
-     * @param ExpressiveContract $original
      * @param ExpressiveContract $model
+     * @param ExpressiveContract $original
      *
-     * @return ExpressiveContract
+     * @throws TException
      */
-    private function setPrimaryKeysFromOriginal($original, $model)
-    {
-        foreach ($original->getSchema()->getDatabase()->getPrimaryKeys() as $primaryKey) {
-            $model->$primaryKey = $original->$primaryKey;
+    public function hasManyDependencies(
+        $model,
+        $original
+    ) {
+        $dependencies = $model->getSchema()->getDatabase()->getByRelationshipType('hasMany');
+
+        if (!empty($dependencies)) {
+            foreach (array_values($dependencies) as $dependency) {
+                $originalValue = $original->{$dependency->getProperty()};
+
+                $updatedValue = $model->{$dependency->getProperty()};
+
+                if (!empty($originalValue) || !empty($updatedValue)) {
+                    $this->getRelationshipBuilder()->hasMany(
+                        $model,
+                        $original,
+                        $dependency
+                    );
+                }
+            }
         }
-
-        $autoIncremented = array_filter($original->getSchema()->getProperties(), function ($property){
-            return !empty($property->getBehavior()->isAutoIncrement()) ? true : false;
-        });
-
-        foreach ($autoIncremented as $field) {
-            $model->{$field->getProperty()} = $original->{$field->getProperty()};
-        }
-
-        return $model;
     }
 }

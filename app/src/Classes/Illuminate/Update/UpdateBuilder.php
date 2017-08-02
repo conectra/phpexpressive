@@ -49,13 +49,18 @@ final class UpdateBuilder
 
     /**
      * @param ExpressiveContract $model
+     * @param boolean            $keepOriginalIfNull
+     * @param boolean            $updatedDependencies
      *
      * @return ExpressiveContract|boolean
      *
      * @throws TException;
      */
-    public function update(ExpressiveContract $model)
-    {
+    public function update(
+        ExpressiveContract $model,
+        $keepOriginalIfNull = true,
+        $updatedDependencies = true
+    ) {
         if (empty($model->getSchema()->getDatabase())) {
             throw new TException(
                 __CLASS__,
@@ -113,7 +118,8 @@ final class UpdateBuilder
 
             $fields = $this->getUpdateFields(
                 $original,
-                $model
+                $model,
+                $keepOriginalIfNull
             );
 
             if (empty($fields)) {
@@ -134,7 +140,9 @@ final class UpdateBuilder
             );
         }
 
-        $this->hasManyDependencies($model);
+        if (!empty($updatedDependencies)) {
+            $this->hasManyDependencies($model);
+        }
 
         $model = Actions::doThingWhenDatabaseAction(
             $model,
@@ -150,6 +158,7 @@ final class UpdateBuilder
     /**
      * @param ExpressiveContract $original
      * @param ExpressiveContract $updated
+     * @param boolean            $keepOriginalIfNull
      *
      * @return array
      *
@@ -157,7 +166,8 @@ final class UpdateBuilder
      */
     public function getUpdateFields(
         ExpressiveContract $original,
-        ExpressiveContract $updated
+        ExpressiveContract $updated,
+        $keepOriginalIfNull = true
     ) {
 
         $properties = $original->getSchema()->getProperties();
@@ -186,7 +196,9 @@ final class UpdateBuilder
             } elseif (!is_array($updatedProperty)) {
 
                 if (is_null($updatedProperty) && empty($property->getBehavior()->isRequired())) {
-                    continue;
+                    if (!empty($keepOriginalIfNull)) {
+                        continue;
+                    }
                 }
 
                 if (is_null($updatedProperty) && !empty($property->getBehavior()->isRequired())) {
