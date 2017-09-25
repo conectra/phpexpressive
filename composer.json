@@ -1,8 +1,8 @@
 {
-  "name": "solis/expressive",
+  "name": "conectra/expressive",
   "type": "library",
   "description": "Object-Relational-Mapper para PHP",
-  "homepage": "https://github.com/rafaelbeecker/phpexpressive",
+  "homepage": "https://github.com/conectra/phpexpressive",
   "license": "MIT",
   "authors": [
     {
