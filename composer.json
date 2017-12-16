@@ -1,5 +1,5 @@
 {
-  "name": "solis/expressive",
+  "name": "conectra/expressive",
   "type": "library",
   "description": "Object-Relational-Mapper para PHP",
   "homepage": "https://github.com/rafaelbeecker/phpexpressive",
@@ -11,7 +11,7 @@
     }
   ],
   "require": {
-    "solis/phpmagic": "~v1.0",
+    "conectra/phpmagic": "~v1.0",
     "illuminate/database": "^5.4",
     "illuminate/events": "^5.2",
     "doctrine/dbal": "~2.5"
